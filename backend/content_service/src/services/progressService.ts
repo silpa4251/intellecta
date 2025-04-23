@@ -85,3 +85,35 @@ export const getUserCourseProgressService = async (userId: string, courseId: str
     }
     return { progress };
 };   
+
+
+export const getAllUserProgressService = async (userId:string) => {
+    if(!userId){
+        throw new CustomError("your session expired, please login",404)
+    }
+    const progressData = await UserProgress.find({userId:userId}).populate("courseId")
+    if(!progressData){
+        throw new CustomError("No progress data found", 404)
+    }
+    return progressData
+}
+
+export const updateCourseQuizScoreService = async(userId: string, courseId: string, score:number, totalQuestions:number)=> {
+    if (!userId || !courseId || score === undefined || totalQuestions === undefined) {
+        throw new CustomError("Missing required quiz data", 400);
+      }
+      const progress = await UserProgress.findOne({ userId, courseId });
+
+      if (!progress) {
+        throw new CustomError("Please complete lessons before attempting quiz", 404);
+      }
+      progress.quiz = {
+        attempted: true,
+        score,
+        totalQuestions,
+        completedAt: new Date(),
+      };
+      progress.lastUpdated = new Date()
+      await progress.save()
+      return { progress}
+    }

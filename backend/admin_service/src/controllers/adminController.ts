@@ -2,6 +2,8 @@ import { Request, Response } from "express";
 import CustomError from "../utils/CustomError";
 import { publishToQueue } from "../utils/rabbitmq/rabbitmqPublish";
 import { users } from "../consumers/userConsumer";
+import userProgressCache from "../consumers/progressData";
+import bulkUsersCache from "../consumers/bulkUsersData";
 
 interface AuthenticatedRequest extends Request {
   user?: {
@@ -14,7 +16,6 @@ export const adminDashboard = async (
   res: Response
 ) => {
   const userId = req.user?.userId;
-
 
   if (!userId) {
     throw new CustomError("User ID is required", 400);
@@ -30,8 +31,7 @@ export const adminDashboard = async (
     return res.status(404).json({ message: "No users found." });
   }
 
-
-//UserRegistration Details
+  //UserRegistration Details
 
   const now = new Date();
 
@@ -56,7 +56,6 @@ export const adminDashboard = async (
     "Dec",
   ];
 
-  
   allUsers.forEach((user) => {
     const createdAt = new Date(user.createdAt);
 
@@ -109,8 +108,7 @@ export const adminDashboard = async (
     year: formatStats(yearStats),
   };
 
-
-//Students count
+  //Students count
 
   const studentCategory = {
     total: allUsers.length,
@@ -131,10 +129,7 @@ export const adminDashboard = async (
         studentCategory.first += 1;
       }
     }
-
-
   });
-
 
   return res.status(200).json({
     success: true,
@@ -143,3 +138,46 @@ export const adminDashboard = async (
     userRegistrationData: graphData,
   });
 };
+export const getTopPerfomingStudents = async (
+  req: AuthenticatedRequest,
+  res: Response
+) => {
+  const limit = Number(req.query.limit) || 10;
+
+  // Step 1: Request top performing users based on lessons completed
+  await publishToQueue("userProgress", limit);
+
+  // Wait for userProgressData to arrive in cache
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  // Step 2: Extract user progress from the cache
+  const UsersProgressData: any[] = Array.from(userProgressCache.values());
+
+  if (!UsersProgressData.length) {
+    return res.status(404).json({ message: "No user progress found." });
+  }
+
+  const userProgressList = UsersProgressData.flatMap((d: any) => d.userProgress || []);
+  const userIds = userProgressList.map((up: any) => up.userId);
+
+  // Step 3: Request full user details for those top users
+  await publishToQueue("fetchBulkUserDetails", { userIds });
+
+  // Wait for user data to be populated in cache
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+
+  // Step 4: Map userId to user data
+  const UsersDetailsMap = new Map(userIds.map((id) => [id, bulkUsersCache.get(id)]));
+
+  // Step 5: Merge user data with progress data
+  const result = userProgressList.map((progress: any) => ({
+    ...progress,
+    user: UsersDetailsMap.get(progress.userId) || null,
+  }));
+
+  return res.status(200).json({
+    message: "Fetched top performing students (by lessons completed)",
+    data: result,
+  });
+};
+

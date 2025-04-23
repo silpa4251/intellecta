@@ -5,7 +5,7 @@ export interface IUser extends Document {
   name: string;
   email: string;
   password: string;
-  age: Number,
+  age: number,
   phone?: string,
   role: "student" | "parent" | "teacher" | "admin";
   profilePic?: string | null;
@@ -42,10 +42,18 @@ const UserSchema: Schema = new Schema(
       enum: ["student", "parent", "teacher", "admin"],
       default: "student",
     },
+    isDeleted: {
+      type: Boolean,
+      default: false
+    },
+    isActive: {
+      type: Boolean,
+      default: false
+    },
     profilePic: { 
         type: String,
         default: null
-    },
+    }
     // refreshToken:{
     //   type:String
     // },

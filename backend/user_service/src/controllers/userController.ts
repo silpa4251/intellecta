@@ -13,6 +13,7 @@ export const getUserById = async (req:Request , res:Response) => {
     res.status(200).json({success:true, message:userData.message, data:userData})
 }
 
+
 interface AuthenticatedRequest extends Request {
     user?: { userId: string }; 
 }
@@ -54,15 +55,85 @@ export const getBulkUsers = async (req:Request, res:Response) :Promise<Response>
 
 
 //Get all users
-export const getAllUsers = async (req:Request, res:Response) :Promise<Response> => {
-    const users = await User.find()
-    if (!users) {
-        throw new CustomError("No user is found", 400);
+
+
+export const getAllUsers = async (req: AuthenticatedRequest, res: Response): Promise<Response> => {
+
+    const {
+      page = "1",
+      limit = "10",
+      isBlock,
+      search,
+      catagory,
+    } = req.query as {
+      page?: string;
+      limit?: string; 
+      isBlock?: string;
+      search?: string;
+      catagory?: string;
+    };
+
+    const currentPage = parseInt(page, 10);
+    const itemsPerPage = parseInt(limit, 10);
+    const skip = (currentPage - 1) * itemsPerPage;
+
+    const filter: any = {
+      isDeleted: { $ne: true },
+    };
+
+
+    
+    if (search) {
+      filter.$or = [
+        { name: { $regex: search, $options: "i" } },
+        { email: { $regex: search, $options: "i" } }
+      ];
     }
 
+    if (isBlock !== undefined) {
+      filter.isBlock = isBlock === "true";
+    }
+
+    if (catagory === "5-8") {
+      filter.age = { $gte: 4, $lte: 8 };
+    } else if (catagory === "9-12") {
+      filter.age = { $gte: 9, $lte: 12 };
+    } else if (catagory === "13-18") {
+      filter.age = { $gte: 13, $lte: 18 };
+    }
+
+    const users = await User.find(filter).skip(skip).limit(itemsPerPage);
+    const totalUsers = await User.countDocuments(filter);
+
     return res.status(200).json({
-        status: "success",
-        message:"getted all users",
-        data: users
-    })
+      success: true,
+      currentPage,
+      totalPages: Math.ceil(totalUsers / itemsPerPage),
+      totalUsers,
+      users,
+    });
 };
+
+
+export const deleteUser = async (req:AuthenticatedRequest, res: Response ) => {
+
+  const {userId} = req.body 
+
+  console.log( "user:",userId)
+
+  const deletedUser = await User.findByIdAndUpdate(
+    userId,
+    { $set: { isDeleted: true } },
+    { new: true }
+  );
+
+  if (!deletedUser) {
+    throw new CustomError("User not found", 404);
+  }
+
+  res.status(200).json({
+    message: "User soft-deleted successfully",
+    user: deletedUser,
+  });
+
+}
